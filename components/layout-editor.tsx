@@ -1,15 +1,38 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useEffect, useId, useState } from "react";
+import {
+  ChangeEvent,
+  DragEvent,
+  PointerEvent as ReactPointerEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   LayoutLayer,
   parseLayoutXml,
   previewSize,
   PrintLayout,
+  serializeLayoutXml,
 } from "@/lib/layout-xml";
 
 const CANVAS_WIDTH = 413;
 const CANVAS_HEIGHT = 622;
+const MM_PER_UNIT = 25.4 / 100;
+
+type PointerAction = {
+  mode: "move" | "resize";
+  index: number;
+  startClientX: number;
+  startClientY: number;
+  startX: number;
+  startY: number;
+  startWidth: number;
+  startHeight: number;
+  scaleX: number;
+  scaleY: number;
+};
 
 function layerName(layer: LayoutLayer, index: number): string {
   if (layer.type === "photo") return `PHOTO ${index + 1}`;
@@ -26,12 +49,22 @@ function fileNameFromUrl(value: string): string {
   }
 }
 
+function toMillimeters(value: number): string {
+  return (value * MM_PER_UNIT).toFixed(1);
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
 export function LayoutEditor() {
   const inputId = useId();
   const [layout, setLayout] = useState<PrintLayout | null>(null);
   const [fileName, setFileName] = useState("idprintKG.xml");
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(0);
+  const pointerAction = useRef<PointerAction | null>(null);
 
   useEffect(() => {
     fetch("/samples/idprintKG.xml")
@@ -39,7 +72,10 @@ export function LayoutEditor() {
         if (!response.ok) throw new Error("サンプルXMLを読み込めませんでした。");
         return response.text();
       })
-      .then((xml) => setLayout(parseLayoutXml(xml)))
+      .then((xml) => {
+        setLayout(parseLayoutXml(xml));
+        setSelectedIndex(0);
+      })
       .catch((caught: unknown) => {
         setError(caught instanceof Error ? caught.message : "読み込みに失敗しました。");
       });
@@ -56,6 +92,7 @@ export function LayoutEditor() {
       const xml = await file.text();
       setLayout(parseLayoutXml(xml));
       setFileName(file.name);
+      setSelectedIndex(0);
       setError("");
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : "読み込みに失敗しました。");
@@ -73,6 +110,97 @@ export function LayoutEditor() {
     void loadFile(event.dataTransfer.files?.[0]);
   }
 
+  function beginPointerAction(
+    event: ReactPointerEvent<HTMLDivElement>,
+    index: number,
+    mode: "move" | "resize",
+  ) {
+    if (!layout) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSelectedIndex(index);
+
+    const layer = layout.layers[index];
+    const size = previewSize(layer);
+    const canvas = event.currentTarget.closest(".print-canvas");
+    const canvasRect = canvas?.getBoundingClientRect();
+
+    pointerAction.current = {
+      mode,
+      index,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: layer.startX ?? 0,
+      startY: layer.startY ?? 0,
+      startWidth: size.width,
+      startHeight: size.height,
+      scaleX: canvasRect ? CANVAS_WIDTH / canvasRect.width : 1,
+      scaleY: canvasRect ? CANVAS_HEIGHT / canvasRect.height : 1,
+    };
+  }
+
+  function continuePointerAction(event: ReactPointerEvent<HTMLDivElement>) {
+    const action = pointerAction.current;
+    if (!action) return;
+
+    const deltaX = Math.round((event.clientX - action.startClientX) * action.scaleX);
+    const deltaY = Math.round((event.clientY - action.startClientY) * action.scaleY);
+
+    setLayout((current) => {
+      if (!current) return current;
+      const layers = [...current.layers];
+      const layer = { ...layers[action.index] };
+
+      if (action.mode === "move") {
+        layer.startX = clamp(action.startX + deltaX, 0, CANVAS_WIDTH - action.startWidth);
+        layer.startY = clamp(action.startY + deltaY, 0, CANVAS_HEIGHT - action.startHeight);
+      } else {
+        layer.width = clamp(action.startWidth + deltaX, 10, CANVAS_WIDTH - action.startX);
+        layer.height = clamp(action.startHeight + deltaY, 10, CANVAS_HEIGHT - action.startY);
+      }
+
+      layers[action.index] = layer;
+      return { ...current, layers };
+    });
+  }
+
+  function endPointerAction(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    pointerAction.current = null;
+  }
+
+  function updateSelectedLayer(field: keyof LayoutLayer, value: number | null) {
+    if (selectedIndex === null) return;
+    setLayout((current) => {
+      if (!current) return current;
+      const layers = [...current.layers];
+      layers[selectedIndex] = { ...layers[selectedIndex], [field]: value };
+      return { ...current, layers };
+    });
+  }
+
+  function updateBackgroundColor(value: string) {
+    setLayout((current) => current ? { ...current, backgroundColor: value } : current);
+  }
+
+  function downloadXml() {
+    if (!layout) return;
+    const xml = serializeLayoutXml(layout);
+    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName.toLowerCase().endsWith(".xml") ? fileName : `${fileName}.xml`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const selectedLayer = selectedIndex === null ? null : layout?.layers[selectedIndex] ?? null;
+  const selectedSize = selectedLayer ? previewSize(selectedLayer) : null;
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -81,14 +209,14 @@ export function LayoutEditor() {
           <p className="eyebrow">SPIXD PRINT</p>
           <h1>Layout Editor</h1>
         </div>
-        <span className="version-chip">Preview 0.1</span>
+        <span className="version-chip">Preview 0.2</span>
       </header>
 
       <section className="intro">
         <div>
-          <p className="step-label">STEP 01</p>
-          <h2>レイアウトXMLを読み込む</h2>
-          <p>既存のXMLを選ぶと、背景色と配置データを印刷面に再現します。</p>
+          <p className="step-label">STEP 02</p>
+          <h2>印刷面を見ながら配置する</h2>
+          <p>枠をドラッグして移動し、右下のハンドルでサイズを変更できます。</p>
         </div>
         <div className="coordinate-note">
           <span>座標面</span>
@@ -117,7 +245,7 @@ export function LayoutEditor() {
                 const label = layerName(layer, index);
                 return (
                   <div
-                    className={`layout-layer layer-${layer.type}`}
+                    className={`layout-layer layer-${layer.type} ${selectedIndex === index ? "is-selected" : ""}`}
                     key={`${layer.type}-${index}`}
                     style={{
                       left: layer.startX ?? 0,
@@ -127,15 +255,31 @@ export function LayoutEditor() {
                       zIndex: index + 1,
                     }}
                     title={layer.type === "img" ? layer.text : label}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${label}を選択して移動`}
+                    onClick={() => setSelectedIndex(index)}
+                    onPointerDown={(event) => beginPointerAction(event, index, "move")}
+                    onPointerMove={continuePointerAction}
+                    onPointerUp={endPointerAction}
+                    onPointerCancel={endPointerAction}
                   >
                     <span>{label}</span>
                     {layer.type === "img" ? <small>{fileNameFromUrl(layer.text)}</small> : null}
+                    <div
+                      className="resize-handle"
+                      aria-hidden="true"
+                      onPointerDown={(event) => beginPointerAction(event, index, "resize")}
+                      onPointerMove={continuePointerAction}
+                      onPointerUp={endPointerAction}
+                      onPointerCancel={endPointerAction}
+                    />
                   </div>
                 );
               })}
             </div>
           </div>
-          <p className="preview-caption">高さ・幅が空欄の写真枠は、プレビュー上のみ3:4で補完しています。</p>
+          <p className="preview-caption">枠をドラッグして移動。右下の四角をドラッグしてリサイズ。空欄の寸法はプレビューのみ3:4で補完します。</p>
         </div>
 
         <aside className="control-panel panel">
@@ -167,11 +311,54 @@ export function LayoutEditor() {
 
           {error ? <p className="error-message" role="alert">{error}</p> : null}
 
+          <div className="editor-section">
+            <div className="section-title">
+              <div>
+                <span className="panel-kicker">EDIT</span>
+                <h4>{selectedLayer && selectedIndex !== null ? layerName(selectedLayer, selectedIndex) : "要素を選択"}</h4>
+              </div>
+              {selectedLayer ? <span className={`layer-badge badge-${selectedLayer.type}`}>{selectedLayer.type}</span> : null}
+            </div>
+
+            {selectedLayer && selectedSize ? (
+              <div className="field-grid">
+                {([
+                  ["startX", "X座標", selectedLayer.startX],
+                  ["startY", "Y座標", selectedLayer.startY],
+                  ["width", "幅", selectedLayer.width],
+                  ["height", "高さ", selectedLayer.height],
+                ] as const).map(([field, label, value]) => (
+                  <label className="number-field" key={field}>
+                    <span>{label}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={value ?? ""}
+                      placeholder="auto"
+                      onChange={(event) => updateSelectedLayer(field, event.target.value === "" ? null : Number(event.target.value))}
+                    />
+                  </label>
+                ))}
+                <div className="physical-size">
+                  <span>実寸の目安</span>
+                  <strong>{toMillimeters(selectedSize.width)} × {toMillimeters(selectedSize.height)} mm</strong>
+                  <small>100dpi相当として換算</small>
+                </div>
+              </div>
+            ) : <p className="empty-selection">プレビュー上の枠を選択してください。</p>}
+          </div>
+
           <div className="summary">
             <div>
               <span>背景色</span>
               <strong className="color-value">
-                <i style={{ backgroundColor: layout?.backgroundColor ?? "#fff" }} />
+                <input
+                  className="color-picker"
+                  type="color"
+                  aria-label="背景色"
+                  value={layout?.backgroundColor ?? "#ffffff"}
+                  onChange={(event) => updateBackgroundColor(event.target.value)}
+                />
                 {layout?.backgroundColor.toUpperCase() ?? "—"}
               </strong>
             </div>
@@ -194,7 +381,12 @@ export function LayoutEditor() {
             {layout?.layers.map((layer, index) => {
               const size = previewSize(layer);
               return (
-                <div className="layer-row" key={`row-${layer.type}-${index}`}>
+                <button
+                  className={`layer-row ${selectedIndex === index ? "is-active" : ""}`}
+                  key={`row-${layer.type}-${index}`}
+                  type="button"
+                  onClick={() => setSelectedIndex(index)}
+                >
                   <span className={`layer-badge badge-${layer.type}`}>{layer.type}</span>
                   <strong>{layerName(layer, index)}</strong>
                   <small>
@@ -202,16 +394,20 @@ export function LayoutEditor() {
                     W {layer.width ?? "auto"} / H {layer.height ?? "auto"}
                     {(layer.width === null || layer.height === null) && ` (表示 ${size.width}×${size.height})`}
                   </small>
-                </div>
+                </button>
               );
             })}
           </div>
+
+          <button className="download-button" type="button" onClick={downloadXml} disabled={!layout}>
+            編集したXMLをダウンロード
+          </button>
         </aside>
       </section>
 
       <footer>
         <span>SPIXD Print Layout Editor</span>
-        <span>次の段階：ドラッグ移動・リサイズ・XML書き出し</span>
+        <span>座標値と空欄値を維持したSPIXD形式で書き出します</span>
       </footer>
     </main>
   );

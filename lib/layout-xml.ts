@@ -78,3 +78,54 @@ export function previewSize(layer: LayoutLayer): { width: number; height: number
 
   return { width: 120, height: 160 };
 }
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function xmlValue(value: string | number | null): string {
+  if (value === null) return "";
+  return escapeXml(String(value));
+}
+
+function serializeLayer(layer: LayoutLayer): string {
+  return [
+    "  <data>",
+    `\t<type>${escapeXml(layer.type)}</type>`,
+    `\t<color>${escapeXml(layer.color)}</color>`,
+    `\t<startx>${xmlValue(layer.startX)}</startx>`,
+    `\t<starty>${xmlValue(layer.startY)}</starty>`,
+    `\t<width>${xmlValue(layer.width)}</width>`,
+    `\t<height>${xmlValue(layer.height)}</height>`,
+    `\t<rate>${escapeXml(layer.rate)}</rate>`,
+    `\t<txt>${escapeXml(layer.text)}</txt>`,
+    "  </data>",
+  ].join("\n");
+}
+
+export function serializeLayoutXml(layout: PrintLayout): string {
+  const backgroundLayer: LayoutLayer = {
+    type: "bkcolor",
+    color: layout.backgroundColor.replace(/^#/, ""),
+    startX: null,
+    startY: null,
+    width: null,
+    height: null,
+    rate: "",
+    text: "",
+  };
+
+  return [
+    '<?xml version="1.0" encoding="utf-8"?>',
+    "<print>",
+    serializeLayer(backgroundLayer),
+    ...layout.layers.map(serializeLayer),
+    "</print>",
+    "",
+  ].join("\n");
+}
