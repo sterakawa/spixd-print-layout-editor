@@ -60,6 +60,11 @@ function fileNameFromUrl(value: string): string {
   }
 }
 
+function previewImageStyle(layer: LayoutLayer): { backgroundImage?: string } {
+  if (layer.type !== "img" || !/^https:\/\//i.test(layer.text)) return {};
+  return { backgroundImage: `url(${JSON.stringify(layer.text)})` };
+}
+
 function toMillimeters(value: number): string {
   return (value * MM_PER_UNIT).toFixed(1);
 }
@@ -292,6 +297,16 @@ export function LayoutEditor() {
     });
   }
 
+  function updateSelectedLayerText(value: string) {
+    if (selectedIndex === null) return;
+    setLayout((current) => {
+      if (!current) return current;
+      const layers = [...current.layers];
+      layers[selectedIndex] = { ...layers[selectedIndex], text: value };
+      return { ...current, layers };
+    });
+  }
+
   function updateSelectedLayerInMillimeters(field: keyof LayoutLayer, value: number | null) {
     updateSelectedLayer(field, value === null ? null : toXmlUnits(value));
   }
@@ -325,6 +340,40 @@ export function LayoutEditor() {
     const newIndex = layout.layers.length;
     setLayout({ ...layout, layers: [...layout.layers, newLayer] });
     setSelectedIndex(newIndex);
+  }
+
+  function addImageLayer() {
+    if (!layout) return;
+    const size = toXmlUnits(30);
+    const imageCount = layout.layers.filter((layer) => layer.type === "img").length;
+    const offset = (imageCount % 5) * 8;
+    const newLayer: LayoutLayer = {
+      type: "img",
+      color: "",
+      startX: clamp(Math.round((canvasWidth - size) / 2) + offset, 0, Math.max(0, canvasWidth - size)),
+      startY: clamp(Math.round((canvasHeight - size) / 2) + offset, 0, Math.max(0, canvasHeight - size)),
+      width: size,
+      height: size,
+      rate: "",
+      text: "",
+    };
+
+    const newIndex = layout.layers.length;
+    setLayout({ ...layout, layers: [...layout.layers, newLayer] });
+    setSelectedIndex(newIndex);
+  }
+
+  function fitSelectedImageToPaper() {
+    if (!layout || selectedIndex === null) return;
+    const layers = [...layout.layers];
+    const layer = { ...layers[selectedIndex] };
+    if (layer.type !== "img") return;
+    layer.startX = 0;
+    layer.startY = 0;
+    layer.width = canvasWidth;
+    layer.height = canvasHeight;
+    layers[selectedIndex] = layer;
+    setLayout({ ...layout, layers });
   }
 
   function applyPhotoRatio(value: PhotoRatioValue) {
@@ -383,7 +432,7 @@ export function LayoutEditor() {
           <p className="eyebrow">SPIXD PRINT</p>
           <h1>Layout Editor</h1>
         </div>
-        <span className="version-chip">Preview 0.4</span>
+        <span className="version-chip">Preview 0.5</span>
       </header>
 
       <section className="intro">
@@ -424,7 +473,7 @@ export function LayoutEditor() {
                 const label = layerName(layout.layers, index);
                 return (
                   <div
-                    className={`layout-layer layer-${layer.type} ${selectedIndex === index ? "is-selected" : ""}`}
+                    className={`layout-layer layer-${layer.type} ${layer.type === "img" && /^https:\/\//i.test(layer.text) ? "has-image" : ""} ${selectedIndex === index ? "is-selected" : ""}`}
                     key={`${layer.type}-${index}`}
                     style={{
                       left: layer.startX ?? 0,
@@ -432,6 +481,7 @@ export function LayoutEditor() {
                       width: size.width,
                       height: size.height,
                       zIndex: index + 1,
+                      ...previewImageStyle(layer),
                     }}
                     title={layer.type === "img" ? layer.text : label}
                     role="button"
@@ -537,6 +587,21 @@ export function LayoutEditor() {
 
             {selectedLayer && selectedSize ? (
               <div className="field-grid">
+                {selectedLayer.type === "img" ? (
+                  <div className="image-source-field">
+                    <label>
+                      <span>画像URL</span>
+                      <input
+                        type="url"
+                        value={selectedLayer.text}
+                        placeholder="https://example.com/logo.png"
+                        onChange={(event) => updateSelectedLayerText(event.target.value)}
+                      />
+                    </label>
+                    <button type="button" onClick={fitSelectedImageToPaper}>用紙全面に合わせる</button>
+                    <small>HTTPS画像はプレビューに表示されます。URLはXMLの&lt;txt&gt;へ保存します。</small>
+                  </div>
+                ) : null}
                 {selectedLayer.type === "photo" && selectedPhotoRatio ? (
                   <label className="ratio-field">
                     <span>写真の比率</span>
@@ -609,7 +674,10 @@ export function LayoutEditor() {
           <div className="layer-list">
             <div className="layer-list-heading">
               <p>配置要素</p>
-              <button type="button" onClick={addPhotoLayer} disabled={!layout}>＋ 写真枠を追加</button>
+              <div className="add-layer-actions">
+                <button type="button" onClick={addPhotoLayer} disabled={!layout}>＋ 写真枠</button>
+                <button type="button" onClick={addImageLayer} disabled={!layout}>＋ 画像</button>
+              </div>
             </div>
             {layout?.layers.map((layer, index) => {
               const size = previewSize(layer);
