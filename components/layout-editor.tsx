@@ -35,10 +35,12 @@ type PointerAction = {
   canvasHeight: number;
 };
 
-function layerName(layer: LayoutLayer, index: number): string {
-  if (layer.type === "photo") return `PHOTO ${index + 1}`;
-  if (layer.type === "img") return `IMG ${index + 1}`;
-  return `${layer.type.toUpperCase()} ${index + 1}`;
+function layerName(layers: LayoutLayer[], index: number): string {
+  const layer = layers[index];
+  const typeIndex = layers.slice(0, index + 1).filter((item) => item.type === layer.type).length;
+  if (layer.type === "photo") return `PHOTO ${typeIndex}`;
+  if (layer.type === "img") return `IMG ${typeIndex}`;
+  return `${layer.type.toUpperCase()} ${typeIndex}`;
 }
 
 function fileNameFromUrl(value: string): string {
@@ -211,6 +213,28 @@ export function LayoutEditor() {
     setPaperSize((current) => ({ widthMm: current.heightMm, heightMm: current.widthMm }));
   }
 
+  function addPhotoLayer() {
+    if (!layout) return;
+    const width = toXmlUnits(30);
+    const height = Math.round((width * 4) / 3);
+    const photoCount = layout.layers.filter((layer) => layer.type === "photo").length;
+    const offset = (photoCount % 5) * 8;
+    const newLayer: LayoutLayer = {
+      type: "photo",
+      color: "",
+      startX: clamp(Math.round((canvasWidth - width) / 2) + offset, 0, Math.max(0, canvasWidth - width)),
+      startY: clamp(Math.round((canvasHeight - height) / 2) + offset, 0, Math.max(0, canvasHeight - height)),
+      width,
+      height: null,
+      rate: "",
+      text: "nf",
+    };
+
+    const newIndex = layout.layers.length;
+    setLayout({ ...layout, layers: [...layout.layers, newLayer] });
+    setSelectedIndex(newIndex);
+  }
+
   function updateBackgroundColor(value: string) {
     setLayout((current) => current ? { ...current, backgroundColor: value } : current);
   }
@@ -276,7 +300,7 @@ export function LayoutEditor() {
             >
               {layout?.layers.map((layer, index) => {
                 const size = previewSize(layer);
-                const label = layerName(layer, index);
+                const label = layerName(layout.layers, index);
                 return (
                   <div
                     className={`layout-layer layer-${layer.type} ${selectedIndex === index ? "is-selected" : ""}`}
@@ -382,7 +406,7 @@ export function LayoutEditor() {
             <div className="section-title">
               <div>
                 <span className="panel-kicker">EDIT</span>
-                <h4>{selectedLayer && selectedIndex !== null ? layerName(selectedLayer, selectedIndex) : "要素を選択"}</h4>
+                <h4>{selectedLayer && selectedIndex !== null && layout ? layerName(layout.layers, selectedIndex) : "要素を選択"}</h4>
               </div>
               {selectedLayer ? <span className={`layer-badge badge-${selectedLayer.type}`}>{selectedLayer.type}</span> : null}
             </div>
@@ -431,7 +455,7 @@ export function LayoutEditor() {
               </strong>
             </div>
             <div>
-              <span>配置要素</span>
+              <span>要素合計（背景除く）</span>
               <strong>{layout?.layers.length ?? 0}</strong>
             </div>
             <div>
@@ -445,7 +469,10 @@ export function LayoutEditor() {
           </div>
 
           <div className="layer-list">
-            <p>読み込んだ要素</p>
+            <div className="layer-list-heading">
+              <p>配置要素</p>
+              <button type="button" onClick={addPhotoLayer} disabled={!layout}>＋ 写真枠を追加</button>
+            </div>
             {layout?.layers.map((layer, index) => {
               const size = previewSize(layer);
               return (
@@ -456,7 +483,7 @@ export function LayoutEditor() {
                   onClick={() => setSelectedIndex(index)}
                 >
                   <span className={`layer-badge badge-${layer.type}`}>{layer.type}</span>
-                  <strong>{layerName(layer, index)}</strong>
+                  <strong>{layerName(layout.layers, index)}</strong>
                   <small>
                     X {toMillimeters(layer.startX ?? 0)}mm / Y {toMillimeters(layer.startY ?? 0)}mm<br />
                     W {layer.width === null ? "auto" : `${toMillimeters(layer.width)}mm`} / H {layer.height === null ? "auto" : `${toMillimeters(layer.height)}mm`}

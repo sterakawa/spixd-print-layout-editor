@@ -385,7 +385,36 @@ button, input { font: inherit; }
 .color-picker::-webkit-color-swatch { border: 0; }
 
 .layer-list { margin: 21px 20px 0; }
-.layer-list > p { margin: 0 0 8px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+
+.layer-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.layer-list-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.layer-list-heading button {
+  padding: 7px 9px;
+  border: 1px solid #bad0c7;
+  border-radius: 8px;
+  color: var(--green-dark);
+  background: var(--mint);
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.layer-list-heading button:hover { border-color: var(--green); background: #d2eddf; }
+.layer-list-heading button:disabled { opacity: .45; cursor: not-allowed; }
 
 .layer-row {
   display: grid;
