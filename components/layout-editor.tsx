@@ -17,9 +17,8 @@ import {
   serializeLayoutXml,
 } from "@/lib/layout-xml";
 
-const CANVAS_WIDTH = 413;
-const CANVAS_HEIGHT = 622;
 const MM_PER_UNIT = 25.4 / 100;
+const UNITS_PER_MM = 100 / 25.4;
 
 type PointerAction = {
   mode: "move" | "resize";
@@ -32,6 +31,8 @@ type PointerAction = {
   startHeight: number;
   scaleX: number;
   scaleY: number;
+  canvasWidth: number;
+  canvasHeight: number;
 };
 
 function layerName(layer: LayoutLayer, index: number): string {
@@ -53,6 +54,14 @@ function toMillimeters(value: number): string {
   return (value * MM_PER_UNIT).toFixed(1);
 }
 
+function toMillimeterNumber(value: number): number {
+  return Number(toMillimeters(value));
+}
+
+function toXmlUnits(valueInMillimeters: number): number {
+  return Math.round(valueInMillimeters * UNITS_PER_MM);
+}
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
@@ -64,7 +73,11 @@ export function LayoutEditor() {
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(0);
+  const [paperSize, setPaperSize] = useState({ widthMm: 102, heightMm: 152 });
   const pointerAction = useRef<PointerAction | null>(null);
+
+  const canvasWidth = toXmlUnits(paperSize.widthMm);
+  const canvasHeight = toXmlUnits(paperSize.heightMm);
 
   useEffect(() => {
     fetch("/samples/idprintKG.xml")
@@ -135,8 +148,10 @@ export function LayoutEditor() {
       startY: layer.startY ?? 0,
       startWidth: size.width,
       startHeight: size.height,
-      scaleX: canvasRect ? CANVAS_WIDTH / canvasRect.width : 1,
-      scaleY: canvasRect ? CANVAS_HEIGHT / canvasRect.height : 1,
+      scaleX: canvasRect ? canvasWidth / canvasRect.width : 1,
+      scaleY: canvasRect ? canvasHeight / canvasRect.height : 1,
+      canvasWidth,
+      canvasHeight,
     };
   }
 
@@ -153,11 +168,11 @@ export function LayoutEditor() {
       const layer = { ...layers[action.index] };
 
       if (action.mode === "move") {
-        layer.startX = clamp(action.startX + deltaX, 0, CANVAS_WIDTH - action.startWidth);
-        layer.startY = clamp(action.startY + deltaY, 0, CANVAS_HEIGHT - action.startHeight);
+        layer.startX = clamp(action.startX + deltaX, 0, Math.max(0, action.canvasWidth - action.startWidth));
+        layer.startY = clamp(action.startY + deltaY, 0, Math.max(0, action.canvasHeight - action.startHeight));
       } else {
-        layer.width = clamp(action.startWidth + deltaX, 10, CANVAS_WIDTH - action.startX);
-        layer.height = clamp(action.startHeight + deltaY, 10, CANVAS_HEIGHT - action.startY);
+        layer.width = clamp(action.startWidth + deltaX, 10, Math.max(10, action.canvasWidth - action.startX));
+        layer.height = clamp(action.startHeight + deltaY, 10, Math.max(10, action.canvasHeight - action.startY));
       }
 
       layers[action.index] = layer;
@@ -180,6 +195,20 @@ export function LayoutEditor() {
       layers[selectedIndex] = { ...layers[selectedIndex], [field]: value };
       return { ...current, layers };
     });
+  }
+
+  function updateSelectedLayerInMillimeters(field: keyof LayoutLayer, value: string) {
+    updateSelectedLayer(field, value === "" ? null : toXmlUnits(Number(value)));
+  }
+
+  function updatePaperSize(field: "widthMm" | "heightMm", value: string) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    setPaperSize((current) => ({ ...current, [field]: parsed }));
+  }
+
+  function swapPaperOrientation() {
+    setPaperSize((current) => ({ widthMm: current.heightMm, heightMm: current.widthMm }));
   }
 
   function updateBackgroundColor(value: string) {
@@ -209,7 +238,7 @@ export function LayoutEditor() {
           <p className="eyebrow">SPIXD PRINT</p>
           <h1>Layout Editor</h1>
         </div>
-        <span className="version-chip">Preview 0.2</span>
+        <span className="version-chip">Preview 0.3</span>
       </header>
 
       <section className="intro">
@@ -219,8 +248,9 @@ export function LayoutEditor() {
           <p>枠をドラッグして移動し、右下のハンドルでサイズを変更できます。</p>
         </div>
         <div className="coordinate-note">
-          <span>座標面</span>
-          <strong>{CANVAS_WIDTH} × {CANVAS_HEIGHT}</strong>
+          <span>用紙サイズ</span>
+          <strong>{paperSize.widthMm} × {paperSize.heightMm} mm</strong>
+          <small>{canvasWidth} × {canvasHeight} @100dpi</small>
         </div>
       </section>
 
@@ -237,7 +267,11 @@ export function LayoutEditor() {
           <div className="canvas-stage">
             <div
               className="print-canvas"
-              style={{ backgroundColor: layout?.backgroundColor ?? "#ffffff" }}
+              style={{
+                backgroundColor: layout?.backgroundColor ?? "#ffffff",
+                width: canvasWidth,
+                height: canvasHeight,
+              }}
               aria-label="印刷レイアウトのプレビュー"
             >
               {layout?.layers.map((layer, index) => {
@@ -311,6 +345,39 @@ export function LayoutEditor() {
 
           {error ? <p className="error-message" role="alert">{error}</p> : null}
 
+          <div className="paper-section">
+            <div className="section-title">
+              <div>
+                <span className="panel-kicker">PAPER</span>
+                <h4>用紙サイズ</h4>
+              </div>
+              <button className="swap-button" type="button" onClick={swapPaperOrientation}>縦横を入れ替え</button>
+            </div>
+            <div className="paper-fields">
+              <label className="number-field">
+                <span>幅（mm）</span>
+                <input
+                  type="number"
+                  min="10"
+                  step="0.1"
+                  value={paperSize.widthMm}
+                  onChange={(event) => updatePaperSize("widthMm", event.target.value)}
+                />
+              </label>
+              <label className="number-field">
+                <span>高さ（mm）</span>
+                <input
+                  type="number"
+                  min="10"
+                  step="0.1"
+                  value={paperSize.heightMm}
+                  onChange={(event) => updatePaperSize("heightMm", event.target.value)}
+                />
+              </label>
+            </div>
+            <p className="paper-note">この値は編集画面の設定です。用紙指定そのものはspixdprint.xml側にあります。</p>
+          </div>
+
           <div className="editor-section">
             <div className="section-title">
               <div>
@@ -323,26 +390,27 @@ export function LayoutEditor() {
             {selectedLayer && selectedSize ? (
               <div className="field-grid">
                 {([
-                  ["startX", "X座標", selectedLayer.startX],
-                  ["startY", "Y座標", selectedLayer.startY],
-                  ["width", "幅", selectedLayer.width],
-                  ["height", "高さ", selectedLayer.height],
+                  ["startX", "X位置（mm）", selectedLayer.startX],
+                  ["startY", "Y位置（mm）", selectedLayer.startY],
+                  ["width", "幅（mm）", selectedLayer.width],
+                  ["height", "高さ（mm）", selectedLayer.height],
                 ] as const).map(([field, label, value]) => (
                   <label className="number-field" key={field}>
                     <span>{label}</span>
                     <input
                       type="number"
                       min="0"
-                      value={value ?? ""}
+                      step="0.1"
+                      value={value === null ? "" : toMillimeterNumber(value)}
                       placeholder="auto"
-                      onChange={(event) => updateSelectedLayer(field, event.target.value === "" ? null : Number(event.target.value))}
+                      onChange={(event) => updateSelectedLayerInMillimeters(field, event.target.value)}
                     />
                   </label>
                 ))}
                 <div className="physical-size">
-                  <span>実寸の目安</span>
+                  <span>現在の表示寸法</span>
                   <strong>{toMillimeters(selectedSize.width)} × {toMillimeters(selectedSize.height)} mm</strong>
-                  <small>100dpi相当として換算</small>
+                  <small>XML出力値：{selectedSize.width} × {selectedSize.height}（100dpi座標）</small>
                 </div>
               </div>
             ) : <p className="empty-selection">プレビュー上の枠を選択してください。</p>}
@@ -390,9 +458,9 @@ export function LayoutEditor() {
                   <span className={`layer-badge badge-${layer.type}`}>{layer.type}</span>
                   <strong>{layerName(layer, index)}</strong>
                   <small>
-                    X {layer.startX ?? 0} / Y {layer.startY ?? 0}<br />
-                    W {layer.width ?? "auto"} / H {layer.height ?? "auto"}
-                    {(layer.width === null || layer.height === null) && ` (表示 ${size.width}×${size.height})`}
+                    X {toMillimeters(layer.startX ?? 0)}mm / Y {toMillimeters(layer.startY ?? 0)}mm<br />
+                    W {layer.width === null ? "auto" : `${toMillimeters(layer.width)}mm`} / H {layer.height === null ? "auto" : `${toMillimeters(layer.height)}mm`}
+                    {(layer.width === null || layer.height === null) && `（表示 ${toMillimeters(size.width)}×${toMillimeters(size.height)}mm）`}
                   </small>
                 </button>
               );
@@ -407,7 +475,7 @@ export function LayoutEditor() {
 
       <footer>
         <span>SPIXD Print Layout Editor</span>
-        <span>座標値と空欄値を維持したSPIXD形式で書き出します</span>
+        <span>画面はmm表示、XMLは100dpi座標で書き出します</span>
       </footer>
     </main>
   );
