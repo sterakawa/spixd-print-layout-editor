@@ -68,6 +68,85 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
+type DecimalInputProps = {
+  value: number | null;
+  min?: number;
+  placeholder?: string;
+  allowEmpty?: boolean;
+  onValueChange: (value: number | null) => void;
+};
+
+function formatDecimal(value: number | null): string {
+  if (value === null) return "";
+  return String(Number(value.toFixed(1)));
+}
+
+function DecimalInput({
+  value,
+  min = 0,
+  placeholder,
+  allowEmpty = true,
+  onValueChange,
+}: DecimalInputProps) {
+  const [draft, setDraft] = useState(() => formatDecimal(value));
+  const isFocused = useRef(false);
+
+  useEffect(() => {
+    if (!isFocused.current) setDraft(formatDecimal(value));
+  }, [value]);
+
+  function commitDraft() {
+    const trimmed = draft.trim();
+    if (trimmed === "") {
+      if (allowEmpty) onValueChange(null);
+      else setDraft(formatDecimal(value));
+      return;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setDraft(formatDecimal(value));
+      return;
+    }
+
+    const committed = Math.max(min, parsed);
+    onValueChange(committed);
+    setDraft(formatDecimal(committed));
+  }
+
+  return (
+    <input
+      type="number"
+      min={min}
+      step="0.1"
+      value={draft}
+      placeholder={placeholder}
+      onFocus={() => { isFocused.current = true; }}
+      onChange={(event) => {
+        const nextDraft = event.target.value;
+        setDraft(nextDraft);
+        if (nextDraft === "") {
+          if (allowEmpty) onValueChange(null);
+          return;
+        }
+        const parsed = Number(nextDraft);
+        if (Number.isFinite(parsed)) onValueChange(Math.max(min, parsed));
+      }}
+      onBlur={() => {
+        isFocused.current = false;
+        commitDraft();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(formatDecimal(value));
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 export function LayoutEditor() {
   const inputId = useId();
   const [layout, setLayout] = useState<PrintLayout | null>(null);
@@ -199,14 +278,13 @@ export function LayoutEditor() {
     });
   }
 
-  function updateSelectedLayerInMillimeters(field: keyof LayoutLayer, value: string) {
-    updateSelectedLayer(field, value === "" ? null : toXmlUnits(Number(value)));
+  function updateSelectedLayerInMillimeters(field: keyof LayoutLayer, value: number | null) {
+    updateSelectedLayer(field, value === null ? null : toXmlUnits(value));
   }
 
-  function updatePaperSize(field: "widthMm" | "heightMm", value: string) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed <= 0) return;
-    setPaperSize((current) => ({ ...current, [field]: parsed }));
+  function updatePaperSize(field: "widthMm" | "heightMm", value: number | null) {
+    if (value === null || !Number.isFinite(value) || value <= 0) return;
+    setPaperSize((current) => ({ ...current, [field]: value }));
   }
 
   function swapPaperOrientation() {
@@ -380,22 +458,20 @@ export function LayoutEditor() {
             <div className="paper-fields">
               <label className="number-field">
                 <span>幅（mm）</span>
-                <input
-                  type="number"
-                  min="10"
-                  step="0.1"
+                <DecimalInput
+                  min={10}
                   value={paperSize.widthMm}
-                  onChange={(event) => updatePaperSize("widthMm", event.target.value)}
+                  allowEmpty={false}
+                  onValueChange={(value) => updatePaperSize("widthMm", value)}
                 />
               </label>
               <label className="number-field">
                 <span>高さ（mm）</span>
-                <input
-                  type="number"
-                  min="10"
-                  step="0.1"
+                <DecimalInput
+                  min={10}
                   value={paperSize.heightMm}
-                  onChange={(event) => updatePaperSize("heightMm", event.target.value)}
+                  allowEmpty={false}
+                  onValueChange={(value) => updatePaperSize("heightMm", value)}
                 />
               </label>
             </div>
@@ -421,13 +497,11 @@ export function LayoutEditor() {
                 ] as const).map(([field, label, value]) => (
                   <label className="number-field" key={field}>
                     <span>{label}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={value === null ? "" : toMillimeterNumber(value)}
+                    <DecimalInput
+                      min={0}
+                      value={value === null ? null : toMillimeterNumber(value)}
                       placeholder="auto"
-                      onChange={(event) => updateSelectedLayerInMillimeters(field, event.target.value)}
+                      onValueChange={(nextValue) => updateSelectedLayerInMillimeters(field, nextValue)}
                     />
                   </label>
                 ))}
