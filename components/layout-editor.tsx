@@ -376,6 +376,18 @@ export function LayoutEditor() {
     setLayout({ ...layout, layers });
   }
 
+  function centerSelectedImage() {
+    if (!layout || selectedIndex === null) return;
+    const layers = [...layout.layers];
+    const layer = { ...layers[selectedIndex] };
+    if (layer.type !== "img") return;
+    const size = previewSize(layer);
+    layer.startX = Math.max(0, Math.round((canvasWidth - size.width) / 2));
+    layer.startY = Math.max(0, Math.round((canvasHeight - size.height) / 2));
+    layers[selectedIndex] = layer;
+    setLayout({ ...layout, layers });
+  }
+
   function applyPhotoRatio(value: PhotoRatioValue) {
     if (!layout || selectedIndex === null) return;
     const preset = PHOTO_RATIOS.find((item) => item.value === value);
@@ -432,7 +444,7 @@ export function LayoutEditor() {
           <p className="eyebrow">SPIXD PRINT</p>
           <h1>Layout Editor</h1>
         </div>
-        <span className="version-chip">Preview 0.5</span>
+        <span className="version-chip">Preview 0.6</span>
       </header>
 
       <section className="intro">
@@ -598,7 +610,10 @@ export function LayoutEditor() {
                         onChange={(event) => updateSelectedLayerText(event.target.value)}
                       />
                     </label>
-                    <button type="button" onClick={fitSelectedImageToPaper}>用紙全面に合わせる</button>
+                    <div className="image-layer-actions">
+                      <button type="button" onClick={centerSelectedImage}>中央に配置</button>
+                      <button type="button" onClick={fitSelectedImageToPaper}>用紙全面に合わせる</button>
+                    </div>
                     <small>HTTPS画像はプレビューに表示されます。URLはXMLの&lt;txt&gt;へ保存します。</small>
                   </div>
                 ) : null}

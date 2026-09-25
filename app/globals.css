@@ -380,7 +380,6 @@ button, input { font: inherit; }
 .image-source-field {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: 1fr auto;
   gap: 7px;
 }
 
@@ -409,8 +408,13 @@ button, input { font: inherit; }
   outline: 2px solid rgba(13, 111, 79, .12);
 }
 
-.image-source-field button {
-  align-self: end;
+.image-layer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.image-layer-actions button {
   height: 38px;
   padding: 0 9px;
   border: 1px solid #bad0c7;
@@ -422,10 +426,9 @@ button, input { font: inherit; }
   cursor: pointer;
 }
 
-.image-source-field button:hover { background: var(--mint); }
+.image-layer-actions button:hover { background: var(--mint); }
 
 .image-source-field small {
-  grid-column: 1 / -1;
   color: var(--muted);
   font-size: 9px;
   line-height: 1.45;
