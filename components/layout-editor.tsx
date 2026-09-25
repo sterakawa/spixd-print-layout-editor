@@ -19,6 +19,14 @@ import {
 
 const MM_PER_UNIT = 25.4 / 100;
 const UNITS_PER_MM = 100 / 25.4;
+const PHOTO_RATIOS = [
+  { value: "3:4", label: "3:4（証明写真）", width: 3, height: 4 },
+  { value: "2:3", label: "2:3（一般写真）", width: 2, height: 3 },
+  { value: "1:1", label: "1:1（正方形）", width: 1, height: 1 },
+  { value: "4:5", label: "4:5（ポートレート）", width: 4, height: 5 },
+] as const;
+
+type PhotoRatioValue = typeof PHOTO_RATIOS[number]["value"];
 
 type PointerAction = {
   mode: "move" | "resize";
@@ -66,6 +74,12 @@ function toXmlUnits(valueInMillimeters: number): number {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
+}
+
+function detectPhotoRatio(width: number, height: number): PhotoRatioValue | "custom" {
+  const ratio = width / height;
+  const preset = PHOTO_RATIOS.find((item) => Math.abs(ratio - item.width / item.height) < 0.01);
+  return preset?.value ?? "custom";
 }
 
 type DecimalInputProps = {
@@ -313,6 +327,32 @@ export function LayoutEditor() {
     setSelectedIndex(newIndex);
   }
 
+  function applyPhotoRatio(value: PhotoRatioValue) {
+    if (!layout || selectedIndex === null) return;
+    const preset = PHOTO_RATIOS.find((item) => item.value === value);
+    if (!preset) return;
+
+    const layers = [...layout.layers];
+    const layer = { ...layers[selectedIndex] };
+    if (layer.type !== "photo") return;
+    const currentSize = previewSize(layer);
+    const width = layer.width && layer.width > 0 ? layer.width : currentSize.width;
+    layer.width = width;
+    layer.height = Math.round(width * preset.height / preset.width);
+    layers[selectedIndex] = layer;
+    setLayout({ ...layout, layers });
+  }
+
+  function deleteSelectedLayer() {
+    if (!layout || selectedIndex === null) return;
+    const targetName = layerName(layout.layers, selectedIndex);
+    if (!window.confirm(`${targetName}を削除しますか？`)) return;
+
+    const layers = layout.layers.filter((_, index) => index !== selectedIndex);
+    setLayout({ ...layout, layers });
+    setSelectedIndex(layers.length === 0 ? null : Math.min(selectedIndex, layers.length - 1));
+  }
+
   function updateBackgroundColor(value: string) {
     setLayout((current) => current ? { ...current, backgroundColor: value } : current);
   }
@@ -331,6 +371,9 @@ export function LayoutEditor() {
 
   const selectedLayer = selectedIndex === null ? null : layout?.layers[selectedIndex] ?? null;
   const selectedSize = selectedLayer ? previewSize(selectedLayer) : null;
+  const selectedPhotoRatio = selectedLayer?.type === "photo" && selectedSize
+    ? detectPhotoRatio(selectedSize.width, selectedSize.height)
+    : null;
 
   return (
     <main className="app-shell">
@@ -340,7 +383,7 @@ export function LayoutEditor() {
           <p className="eyebrow">SPIXD PRINT</p>
           <h1>Layout Editor</h1>
         </div>
-        <span className="version-chip">Preview 0.3</span>
+        <span className="version-chip">Preview 0.4</span>
       </header>
 
       <section className="intro">
@@ -484,11 +527,32 @@ export function LayoutEditor() {
                 <span className="panel-kicker">EDIT</span>
                 <h4>{selectedLayer && selectedIndex !== null && layout ? layerName(layout.layers, selectedIndex) : "要素を選択"}</h4>
               </div>
-              {selectedLayer ? <span className={`layer-badge badge-${selectedLayer.type}`}>{selectedLayer.type}</span> : null}
+              {selectedLayer ? (
+                <div className="section-actions">
+                  <span className={`layer-badge badge-${selectedLayer.type}`}>{selectedLayer.type}</span>
+                  <button className="delete-button" type="button" onClick={deleteSelectedLayer}>削除</button>
+                </div>
+              ) : null}
             </div>
 
             {selectedLayer && selectedSize ? (
               <div className="field-grid">
+                {selectedLayer.type === "photo" && selectedPhotoRatio ? (
+                  <label className="ratio-field">
+                    <span>写真の比率</span>
+                    <select
+                      value={selectedPhotoRatio}
+                      onChange={(event) => {
+                        if (event.target.value !== "custom") applyPhotoRatio(event.target.value as PhotoRatioValue);
+                      }}
+                    >
+                      {PHOTO_RATIOS.map((ratio) => (
+                        <option value={ratio.value} key={ratio.value}>{ratio.label}</option>
+                      ))}
+                      <option value="custom">カスタム</option>
+                    </select>
+                  </label>
+                ) : null}
                 {([
                   ["startX", "X位置（mm）", selectedLayer.startX],
                   ["startY", "Y位置（mm）", selectedLayer.startY],
