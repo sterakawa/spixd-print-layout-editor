@@ -25,8 +25,16 @@ const PHOTO_RATIOS = [
   { value: "1:1", label: "1:1（正方形）", width: 1, height: 1 },
   { value: "4:5", label: "4:5（ポートレート）", width: 4, height: 5 },
 ] as const;
+const PAPER_PRESETS = [
+  { value: "l", label: "L判（89 × 127mm）", widthMm: 89, heightMm: 127 },
+  { value: "kg", label: "KG判（102 × 152mm）", widthMm: 102, heightMm: 152 },
+  { value: "2l", label: "2L判（127 × 178mm）", widthMm: 127, heightMm: 178 },
+  { value: "cpl", label: "CPL・CP1500（89 × 119mm）", widthMm: 89, heightMm: 119 },
+  { value: "cpkg", label: "CPKG・CP1500（100 × 148mm）", widthMm: 100, heightMm: 148 },
+] as const;
 
 type PhotoRatioValue = typeof PHOTO_RATIOS[number]["value"];
+type PaperPresetValue = typeof PAPER_PRESETS[number]["value"];
 
 type PointerAction = {
   mode: "move" | "resize";
@@ -84,6 +92,15 @@ function clamp(value: number, minimum: number, maximum: number): number {
 function detectPhotoRatio(width: number, height: number): PhotoRatioValue | "custom" {
   const ratio = width / height;
   const preset = PHOTO_RATIOS.find((item) => Math.abs(ratio - item.width / item.height) < 0.01);
+  return preset?.value ?? "custom";
+}
+
+function detectPaperPreset(widthMm: number, heightMm: number): PaperPresetValue | "custom" {
+  const preset = PAPER_PRESETS.find((item) => {
+    const portrait = Math.abs(widthMm - item.widthMm) < 0.05 && Math.abs(heightMm - item.heightMm) < 0.05;
+    const landscape = Math.abs(widthMm - item.heightMm) < 0.05 && Math.abs(heightMm - item.widthMm) < 0.05;
+    return portrait || landscape;
+  });
   return preset?.value ?? "custom";
 }
 
@@ -320,6 +337,12 @@ export function LayoutEditor() {
     setPaperSize((current) => ({ widthMm: current.heightMm, heightMm: current.widthMm }));
   }
 
+  function applyPaperPreset(value: PaperPresetValue) {
+    const preset = PAPER_PRESETS.find((item) => item.value === value);
+    if (!preset) return;
+    setPaperSize({ widthMm: preset.widthMm, heightMm: preset.heightMm });
+  }
+
   function addPhotoLayer() {
     if (!layout) return;
     const width = toXmlUnits(30);
@@ -435,6 +458,7 @@ export function LayoutEditor() {
   const selectedPhotoRatio = selectedLayer?.type === "photo" && selectedSize
     ? detectPhotoRatio(selectedSize.width, selectedSize.height)
     : null;
+  const selectedPaperPreset = detectPaperPreset(paperSize.widthMm, paperSize.heightMm);
 
   return (
     <main className="app-shell">
@@ -444,7 +468,7 @@ export function LayoutEditor() {
           <p className="eyebrow">SPIXD PRINT</p>
           <h1>Layout Editor</h1>
         </div>
-        <span className="version-chip">Preview 0.6</span>
+        <span className="version-chip">Preview 0.7</span>
       </header>
 
       <section className="intro">
@@ -560,6 +584,20 @@ export function LayoutEditor() {
               </div>
               <button className="swap-button" type="button" onClick={swapPaperOrientation}>縦横を入れ替え</button>
             </div>
+            <label className="paper-preset-field">
+              <span>用紙プリセット</span>
+              <select
+                value={selectedPaperPreset}
+                onChange={(event) => {
+                  if (event.target.value !== "custom") applyPaperPreset(event.target.value as PaperPresetValue);
+                }}
+              >
+                {PAPER_PRESETS.map((preset) => (
+                  <option value={preset.value} key={preset.value}>{preset.label}</option>
+                ))}
+                <option value="custom">カスタム</option>
+              </select>
+            </label>
             <div className="paper-fields">
               <label className="number-field">
                 <span>幅（mm）</span>

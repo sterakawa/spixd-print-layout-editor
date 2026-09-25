@@ -295,6 +295,34 @@ button, input { font: inherit; }
   gap: 9px;
 }
 
+.paper-preset-field {
+  display: block;
+  margin-bottom: 9px;
+}
+
+.paper-preset-field span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.paper-preset-field select {
+  width: 100%;
+  height: 38px;
+  padding: 0 9px;
+  border: 1px solid #cfd8d3;
+  border-radius: 8px;
+  color: var(--ink);
+  background: white;
+  font-size: 12px;
+}
+
+.paper-preset-field select:focus {
+  border-color: var(--green);
+  outline: 2px solid rgba(13, 111, 79, .12);
+}
+
 .swap-button {
   padding: 6px 8px;
   border: 1px solid #bad0c7;
